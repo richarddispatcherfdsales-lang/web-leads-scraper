@@ -1,0 +1,60 @@
+name: Web Triggered Scraper
+
+on:
+  # Is event se aap web interface ke zariye is Action ko chala sakte hain
+  workflow_dispatch:
+    inputs:
+      keywords:
+        description: 'Keywords to scrape (comma-separated string)'
+        required: true
+        default: 'best restaurants in pakistan, top ac services karachi'
+
+jobs:
+  scrape_and_commit:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      # Yeh zaruri hai taake commit back ho sake
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }} 
+        
+    - name: Install Chromium Browser (For Selenium)
+      # Chromium-browser zaruri hai kyunke yeh GitHub ka default browser hai
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y chromium-browser
+        
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        
+    - name: Install Python Dependencies
+      # Requirements.txt file aapki repo mein honi chahiye
+      run: |
+        pip install -r requirements.txt
+        
+    - name: Set Environment Variables for Scraper
+      # Keywords input ko environment variable mein set karein
+      run: |
+        echo "KEYWORDS_INPUT=${{ github.event.inputs.keywords }}" >> $GITHUB_ENV
+        
+    - name: Run Scraper Script
+      # Scraper chalao
+      run: python batch_scraper.py
+      
+    - name: Commit and Push Results
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        # Woh folder jismein CSV files banegi
+        files: 'BATCH_SCRAPING_RESULTS/*.csv' 
+        commit_message: "Automatic: Scraped leads for new job (Workflow ID: ${{ github.run_id }})"
+        # Force add files taake nayi files bhi add hon
+        args: '--no-verify --force' 
+        
+    - name: Notify on Completion
+      run: |
+        echo "## Scraping Job Complete!" >> $GITHUB_STEP_SUMMARY
+        echo "New leads are available in the 'BATCH_SCRAPING_RESULTS' folder on the 'main' branch." >> $GITHUB_STEP_SUMMARY
