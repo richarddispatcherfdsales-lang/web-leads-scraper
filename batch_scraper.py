@@ -1,4 +1,4 @@
-# batch_scraper.py (GitHub Actions Final Fixed Version)
+# batch_scraper.py (GitHub Actions Final Fixed Version - Anti-Bot Edition)
 # This script retrieves keywords from a GitHub Action Environment Variable.
 
 import time
@@ -36,27 +36,35 @@ SOCIAL_MEDIA_PATTERNS = {
 # --- FUNCTIONS ---
 
 def setup_driver():
-    """Configures the Chrome Driver for the GitHub Actions environment."""
-    print("-> Setting up Chrome Driver for Headless Mode...")
+    """Configures the Chrome Driver for the GitHub Actions environment with anti-detection."""
+    print("-> Setting up Chrome Driver for Headless Mode with anti-bot measures...")
     options = webdriver.ChromeOptions()
-    options.add_argument('--headless')          # Run browser in background
-    options.add_argument('--no-sandbox')        # Required for GitHub Actions/Docker
-    options.add_argument('--disable-dev-shm-usage') # Fixes memory issue
+    options.add_argument('--headless')          
+    options.add_argument('--no-sandbox')        
+    options.add_argument('--disable-dev-shm-usage') 
     options.add_argument('--window-size=1920,1080')
     options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     
-    # 🌟 CRITICAL FIX: Tell Selenium where the Chromium browser binary is located.
-    # This path matches the 'chromium-browser' package installed in the YAML.
+    # CRITICAL FIX 1: Chromium Binary Location (from previous step)
     options.binary_location = '/usr/bin/chromium-browser' 
     
+    # 🌟 CRITICAL FIX 2: Anti-Detection Flags 🌟
+    # Hide the "enable-automation" flag
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    # Disable the automation extension
+    options.add_experimental_option('useAutomationExtension', False)
+    
     try:
-        # The YAML file ensures 'chromedriver' is in the system PATH.
         driver = webdriver.Chrome(options=options)
-        print("-> Driver setup successful.")
+        
+        # 🌟 CRITICAL FIX 3: Execute JS to hide additional automation signs 🌟
+        # This script removes the navigator.webdriver property (common detection vector)
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
+        print("-> Driver setup successful with anti-bot flags.")
         return driver
     except Exception as e:
         print(f"!!! Driver setup error: {e}")
-        # Clean exit on failure
         return None
 
 def scrape_social_media(website_url):
@@ -68,7 +76,8 @@ def scrape_social_media(website_url):
     try:
         # Download website content
         headers = {
-            'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+            # Use a slightly less common user-agent for requests module
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9'
         }
         response = requests.get(website_url, headers=headers, timeout=10)
@@ -80,7 +89,7 @@ def scrape_social_media(website_url):
         html_content = response.text 
         
         # 1. Look for links in HTML content
-        for key, patterns in SOCIAL_MEDIA_PATTERMS.items():
+        for key, patterns in SOCIAL_MEDIA_PATTERNS.items():
             for pattern in patterns:
                 match = re.search(pattern, html_content, re.IGNORECASE)
                 if match:
@@ -101,18 +110,23 @@ def scrape_social_media(website_url):
 
 def scrape_google_maps(driver, keyword):
     """Scrapes business leads from Google Maps."""
-    # Note: Using a modified base URL to help prevent immediate blocks
-    base_url = "https://www.google.com/maps/search/"
-    search_url = f"{base_url}{keyword.replace(' ', '+')}"
+    
+    # 🌟 CRITICAL FIX 4: Use standard Google Maps Search URL 🌟
+    search_query = keyword.replace(' ', '+')
+    # Standard aur robust Maps search URL format
+    search_url = f"https://www.google.com/maps/search/{search_query}" 
+
     print(f"-> Search initiated: {keyword}")
+    print(f"-> URL: {search_url}") 
 
     try:
         driver.get(search_url)
-        WebDriverWait(driver, 15).until(
+        # Increased wait time for slow loading/redirection due to anti-bot system
+        WebDriverWait(driver, 25).until( 
             EC.presence_of_element_located((By.CSS_SELECTOR, 'div[role="feed"]'))
         )
     except TimeoutException:
-        print("  ! Search page took too long to load. Skipping keyword.")
+        print("  ! Search page took too long to load (Timeout 25s). It might be blocked. Skipping keyword.")
         return []
     except WebDriverException as e:
         print(f"  ! WebDriver Error: {e}")
@@ -122,9 +136,13 @@ def scrape_google_maps(driver, keyword):
     
     # Scroll down to load more results (max 3 scrolls for efficiency)
     for _ in range(3):
-        scrollable_div = driver.find_element(By.CSS_SELECTOR, 'div[role="feed"]')
-        driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scrollable_div)
-        time.sleep(3) 
+        try:
+            scrollable_div = driver.find_element(By.CSS_SELECTOR, 'div[role="feed"]')
+            driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scrollable_div)
+            time.sleep(4) # Scroll ke baad thoda zyada wait karein
+        except:
+            # Agar 'feed' div nahi mili, toh scrolling band kar dein
+            break
 
     # Extract all business cards
     try:
@@ -140,8 +158,8 @@ def scrape_google_maps(driver, keyword):
             name_element = card.find_element(By.CLASS_NAME, 'fontHeadlineSmall')
             name = name_element.text.strip()
             
-            # Click the card to open the details panel
-            card.click()
+            # Click the card to open the details panel (using robust JS click)
+            driver.execute_script("arguments[0].click();", card) 
             
             # Wait for the details panel to load
             WebDriverWait(driver, 10).until(
@@ -165,7 +183,6 @@ def scrape_google_maps(driver, keyword):
                 
             try:
                 reviews_text = driver.find_element(By.CSS_SELECTOR, 'button[jsaction*="toggleReviews"]').text.strip()
-                # Clean up the reviews count (e.g., "1,234 reviews" -> "1,234")
                 details['Reviews'] = reviews_text.replace(' reviews', '').replace(' Review', '').replace('(', '').replace(')', '').strip()
             except:
                 details['Reviews'] = 'N/A'
@@ -197,8 +214,9 @@ def scrape_google_maps(driver, keyword):
 
             # Close the details panel to return to the list
             try:
+                # Close button ka CSS Selector
                 close_button = driver.find_element(By.CSS_SELECTOR, 'button[aria-label="Close"]')
-                close_button.click()
+                driver.execute_script("arguments[0].click();", close_button)
                 time.sleep(1) 
             except:
                 # If close button is not found, refresh the page to reset the state
@@ -230,8 +248,6 @@ if __name__ == '__main__':
         
         driver = setup_driver()
         if not driver:
-            # sys.exit(1) is called inside setup_driver() if it fails, 
-            # but we keep this check for redundancy.
             sys.exit(1)
 
         for keyword in keywords:
