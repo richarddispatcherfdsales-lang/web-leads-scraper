@@ -1,0 +1,9 @@
+{
+  "name": "web-to-github-scraper-trigger",
+  "version": "1.0.0",
+  "description": "Frontend for triggering GitHub Actions Scraper",
+  "private": true,
+  "scripts": {
+    "start": "echo 'This is a static HTML site.'"
+  }
+}
