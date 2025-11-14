@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leads Scraper Trigger</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #f4f7f6; font-family: 'Inter', sans-serif; }
+        .card { max-width: 650px; margin: 40px auto; padding: 25px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        .status-box { transition: all 0.3s ease; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1 class="text-3xl font-bold text-center mb-6 text-indigo-700">🌐 Web-to-GitHub Leads Scraper</h1>
+        <p class="text-center text-gray-600 mb-6">Apne keywords yahan daalein (har keyword nayi line mein) aur GitHub Action ko trigger karein.</p>
+        
+        <textarea id="keywords" rows="6" class="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="ac repair karachi pakistan&#10;best cafes lahore"></textarea>
+        
+        <button id="start-btn" onclick="triggerAction()" class="w-full py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition duration-150 ease-in-out disabled:bg-gray-400 disabled:cursor-not-allowed mt-4 shadow-md">
+            🚀 Start Scraping on GitHub
+        </button>
+
+        <div id="status-box" class="status-box mt-6 p-4 rounded-lg font-medium text-sm border-l-4 border-blue-500 bg-blue-100 text-blue-800">
+            <span id="status-text">Status: Ready. Please enter keywords.</span>
+        </div>
+        
+        <div class="mt-6 p-4 text-xs text-gray-500 bg-gray-50 rounded-lg">
+            <p class="font-bold text-gray-700">Zaroori Imlaak (Required Setup):</p>
+            <ol class="list-decimal list-inside ml-4 mt-2 space-y-1">
+                <li>Yeh app Vercel par deploy hogi.</li>
+                <li>Scraping aapke GitHub Repository mein hogi.</li>
+                <li>Deploy karne ke baad, aapko **Vercel Environment Variables** mein yeh values set karni hain: 
+                    <span class="font-mono bg-gray-200 p-0.5 rounded text-red-600">GITHUB_TOKEN</span>, 
+                    <span class="font-mono bg-gray-200 p-0.5 rounded text-red-600">GITHUB_REPO_OWNER</span>, 
+                    <span class="font-mono bg-gray-200 p-0.5 rounded text-red-600">GITHUB_REPO_NAME</span>.
+                </li>
+            </ol>
+            <p class="mt-2">Kam poora hone ke baad, leads CSV files ki shakal mein aapke **GitHub Repo** ke **<code class="font-mono text-gray-700">BATCH_SCRAPING_RESULTS</code>** folder mein milengi.</p>
+        </div>
+    </div>
+
+    <script>
+        const keywordsInput = document.getElementById('keywords');
+        const startBtn = document.getElementById('start-btn');
+        const statusBox = document.getElementById('status-box');
+        const statusText = document.getElementById('status-text');
+
+        // PRODUCTION VALUES (Vercel automatically injects these during build time)
+        // Note: Client-side JavaScript mein secrets daalna theek nahi hai, lekin GitHub API call 
+        // ko seedhe browser se karne ke liye yeh sabse aasan tareeqa hai.
+        const GITHUB_TOKEN = '{{ GITHUB_TOKEN_PLACEHOLDER }}';
+        const OWNER = '{{ GITHUB_REPO_OWNER_PLACEHOLDER }}';
+        const REPO = '{{ GITHUB_REPO_NAME_PLACEHOLDER }}';
+        const WORKFLOW_ID = 'scrape.yml'; 
+
+        // Environment variables ko access karne ke liye function
+        function getEnvVar(name) {
+             // In a real Vercel app, you would use a Vercel Serverless Function 
+             // to proxy this call, which is more secure.
+             // For this static HTML deployment, we rely on the user to replace placeholders
+             // or use client-side logic after deployment.
+             if (name === 'GITHUB_TOKEN_PLACEHOLDER') return 'REPLACE_ME_TOKEN';
+             if (name === 'GITHUB_REPO_OWNER_PLACEHOLDER') return 'REPLACE_ME_OWNER';
+             if (name === 'GITHUB_REPO_NAME_PLACEHOLDER') return 'REPLACE_ME_REPO';
+             return '';
+        }
+
+        function setStatus(message, type = 'info') {
+            const colors = {
+                'info': { border: 'border-blue-500', bg: 'bg-blue-100', text: 'text-blue-800' },
+                'success': { border: 'border-green-500', bg: 'bg-green-100', text: 'text-green-800' },
+                'error': { border: 'border-red-500', bg: 'bg-red-100', text: 'text-red-800' },
+                'warning': { border: 'border-yellow-500', bg: 'bg-yellow-100', text: 'text-yellow-800' }
+            };
+            
+            const selected = colors[type];
+            statusText.textContent = message;
+            statusBox.className = `status-box mt-6 p-4 rounded-lg font-medium text-sm border-l-4 ${selected.border} ${selected.bg} ${selected.text}`;
+        }
+
+        async function triggerAction() {
+            const keywordsRaw = keywordsInput.value;
+            const keywordsList = keywordsRaw.split('\n').map(k => k.trim()).filter(k => k.length > 0);
+            
+            if (keywordsList.length === 0) {
+                setStatus('Bara-e-meherbani kam az kam aik keyword daalein.', 'warning');
+                return;
+            }
+            
+            const token = getEnvVar('GITHUB_TOKEN_PLACEHOLDER');
+            const owner = getEnvVar('GITHUB_REPO_OWNER_PLACEHOLDER');
+            const repo = getEnvVar('GITHUB_REPO_NAME_PLACEHOLDER');
+
+            if (token === 'REPLACE_ME_TOKEN' || owner === 'REPLACE_ME_OWNER' || repo === 'REPLACE_ME_REPO') {
+                 setStatus("ERROR: Aap ne Vercel Environment Variables set nahi kiye hain. Dekhein 'Zaroori Imlaak'.", 'error');
+                 return;
+            }
+
+            const keywordsString = keywordsList.join(',');
+
+            startBtn.disabled = true;
+            setStatus('Request GitHub Actions ko bheji ja rahi hai...', 'info');
+
+            const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${WORKFLOW_ID}/dispatches`;
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `token ${token}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ref: 'main', // Aapki branch ka naam
+                        inputs: {
+                            keywords: keywordsString
+                        }
+                    })
+                });
+
+                if (response.status === 204) {
+                    setStatus('KAAMYAB! GitHub Action shuru ho chuka hai. Kuch der mein results aapke repo par milenge. (GitHub > Actions tab check karein).', 'success');
+                } else {
+                    const errorData = await response.json();
+                    setStatus(`ERROR: Action shuru nahi hua. Status: ${response.status}. Masla: ${errorData.message || 'Unknown API Error'}`, 'error');
+                }
+
+            } catch (e) {
+                setStatus(`Network Error: Server se rabta nahi ho paya. ${e.message}`, 'error');
+            } finally {
+                startBtn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
