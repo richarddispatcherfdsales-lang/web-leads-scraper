@@ -1,4 +1,4 @@
-# batch_scraper.py (GitHub Actions Final Fixed Version - Anti-Bot Edition)
+# batch_scraper.py (GitHub Actions Final Fixed Version - Ultimate Anti-Bot Edition)
 # This script retrieves keywords from a GitHub Action Environment Variable.
 
 import time
@@ -7,6 +7,7 @@ import os
 import re
 import requests
 import sys 
+import random # Naya import: Random delays ke liye
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -18,11 +19,10 @@ from bs4 import BeautifulSoup
 import phonenumbers
 
 # --- CONFIGURATION ---
-# GitHub Action will set the list of keywords here (comma-separated string)
 KEYWORDS_STRING = os.environ.get('KEYWORDS_INPUT', 'restaurant near me, ac repair karachi')
 OUTPUT_FOLDER = 'BATCH_SCRAPING_RESULTS' 
 
-# Social media patterns for detection
+# Social media patterns (unchanged)
 SOCIAL_MEDIA_PATTERNS = {
     'facebook': [r'facebook\.com/[^/\\s\\?]+', r'fb\.com/[^/\\s\\?]+'],
     'instagram': [r'instagram\.com/[^/\\s\\?]+', r'instagr\.am/[^/\\s\\?]+'],
@@ -45,20 +45,17 @@ def setup_driver():
     options.add_argument('--window-size=1920,1080')
     options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     
-    # CRITICAL FIX 1: Chromium Binary Location (from previous step)
+    # Chromium Binary Location 
     options.binary_location = '/usr/bin/chromium-browser' 
     
-    # 🌟 CRITICAL FIX 2: Anti-Detection Flags 🌟
-    # Hide the "enable-automation" flag
+    # Anti-Detection Flags 
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    # Disable the automation extension
     options.add_experimental_option('useAutomationExtension', False)
     
     try:
         driver = webdriver.Chrome(options=options)
         
-        # 🌟 CRITICAL FIX 3: Execute JS to hide additional automation signs 🌟
-        # This script removes the navigator.webdriver property (common detection vector)
+        # Execute JS to hide additional automation signs
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         
         print("-> Driver setup successful with anti-bot flags.")
@@ -74,9 +71,7 @@ def scrape_social_media(website_url):
         return social_links
 
     try:
-        # Download website content
         headers = {
-            # Use a slightly less common user-agent for requests module
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9'
         }
@@ -88,12 +83,10 @@ def scrape_social_media(website_url):
         soup = BeautifulSoup(response.content, 'html.parser')
         html_content = response.text 
         
-        # 1. Look for links in HTML content
         for key, patterns in SOCIAL_MEDIA_PATTERNS.items():
             for pattern in patterns:
                 match = re.search(pattern, html_content, re.IGNORECASE)
                 if match:
-                    # Clean up the link (add https if missing)
                     link = match.group(0)
                     if not link.startswith(('http', 'www')):
                         social_links[key] = 'https://' + link
@@ -111,9 +104,8 @@ def scrape_social_media(website_url):
 def scrape_google_maps(driver, keyword):
     """Scrapes business leads from Google Maps."""
     
-    # 🌟 CRITICAL FIX 4: Use standard Google Maps Search URL 🌟
+    # 🌟 FIX: Use a more direct search URL format for Maps results.
     search_query = keyword.replace(' ', '+')
-    # Standard aur robust Maps search URL format
     search_url = f"https://www.google.com/maps/search/{search_query}" 
 
     print(f"-> Search initiated: {keyword}")
@@ -121,7 +113,7 @@ def scrape_google_maps(driver, keyword):
 
     try:
         driver.get(search_url)
-        # Increased wait time for slow loading/redirection due to anti-bot system
+        # Increased initial wait time (25 seconds)
         WebDriverWait(driver, 25).until( 
             EC.presence_of_element_located((By.CSS_SELECTOR, 'div[role="feed"]'))
         )
@@ -134,18 +126,20 @@ def scrape_google_maps(driver, keyword):
 
     business_details = []
     
-    # Scroll down to load more results (max 3 scrolls for efficiency)
-    for _ in range(3):
+    # Scroll down to load more results (4 scrolls for more data)
+    for i in range(4):
         try:
             scrollable_div = driver.find_element(By.CSS_SELECTOR, 'div[role="feed"]')
             driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scrollable_div)
-            time.sleep(4) # Scroll ke baad thoda zyada wait karein
+            # 🌟 FIX: Random delay after scrolling to mimic human behavior
+            time.sleep(random.uniform(3, 5)) 
         except:
-            # Agar 'feed' div nahi mili, toh scrolling band kar dein
+            print(f"  ! Scrolling failed on iteration {i}. Stopping scroll.")
             break
 
     # Extract all business cards
     try:
+        # Business list items ka CSS Selector
         cards = driver.find_elements(By.CSS_SELECTOR, 'div[role="feed"] > div > div[jsaction^="mouseover:"][aria-label]')
         print(f"  -> Found {len(cards)} potential cards.")
     except:
@@ -161,33 +155,28 @@ def scrape_google_maps(driver, keyword):
             # Click the card to open the details panel (using robust JS click)
             driver.execute_script("arguments[0].click();", card) 
             
-            # Wait for the details panel to load
-            WebDriverWait(driver, 10).until(
+            # 🌟 FIX: Wait thoda zyada (12 seconds) for detail panel to load
+            WebDriverWait(driver, 12).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'div[data-ogc-title]'))
             )
             
-            # Extract details from the new panel
             details = {'Business Name': name}
             
-            # Extract Category, Rating, Reviews
+            # Data extraction (using try-except for every piece to ensure stability)
             try:
                 details['Category'] = driver.find_element(By.CSS_SELECTOR, 'button[jsaction*="category"]').text.strip()
-            except:
-                details['Category'] = 'N/A'
+            except: details['Category'] = 'N/A'
                 
             try:
                 rating_text = driver.find_element(By.CSS_SELECTOR, 'div.fontDisplayLarge').text.strip()
                 details['Rating'] = float(rating_text)
-            except:
-                details['Rating'] = 'N/A'
+            except: details['Rating'] = 'N/A'
                 
             try:
                 reviews_text = driver.find_element(By.CSS_SELECTOR, 'button[jsaction*="toggleReviews"]').text.strip()
                 details['Reviews'] = reviews_text.replace(' reviews', '').replace(' Review', '').replace('(', '').replace(')', '').strip()
-            except:
-                details['Reviews'] = 'N/A'
+            except: details['Reviews'] = 'N/A'
             
-            # Extract Address, Phone, Website
             info_elements = driver.find_elements(By.CSS_SELECTOR, 'button[data-tooltip]')
             
             details['Address'] = 'N/A'
@@ -214,21 +203,27 @@ def scrape_google_maps(driver, keyword):
 
             # Close the details panel to return to the list
             try:
-                # Close button ka CSS Selector
                 close_button = driver.find_element(By.CSS_SELECTOR, 'button[aria-label="Close"]')
                 driver.execute_script("arguments[0].click();", close_button)
                 time.sleep(1) 
             except:
-                # If close button is not found, refresh the page to reset the state
+                # Fallback: Refresh the page to reset the state
                 driver.get(search_url)
                 WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'div[role="feed"]'))
                 )
                 
-        except Exception:
-            # Skip to the next card if processing fails for any reason
-            pass
-
+        except Exception as e:
+            # Ye exception tab trigger hota hai jab card click karne ke baad detail panel load na ho paye
+            print(f"  ! Failed to process card for: {name}. Error: {e}")
+            # Ensure we are back on the list view by attempting to close the panel
+            try:
+                close_button = driver.find_element(By.CSS_SELECTOR, 'button[aria-label="Close"]')
+                driver.execute_script("arguments[0].click();", close_button)
+                time.sleep(1)
+            except:
+                pass
+            
     return business_details
 
 
@@ -256,18 +251,15 @@ if __name__ == '__main__':
             if all_business_details:
                 df = pd.DataFrame(all_business_details)
                 
-                # Define desired column order
                 column_order = [
                     'Business Name', 'Website', 'Phone Number', 'Rating', 'Reviews', 
                     'Category', 'Address', 'Facebook', 'Instagram', 'Twitter', 
                     'LinkedIn', 'YouTube', 'Pinterest', 'TikTok'
                 ]
                 
-                # Filter columns to only include existing ones and reorder
                 existing_columns = [col for col in column_order if col in df.columns]
                 df = df.reindex(columns=existing_columns)
                 
-                # Create a safe filename from the keyword
                 safe_filename = "".join(c for c in keyword if c.isalnum() or c in (' ', '_')).rstrip()
                 output_path = os.path.join(OUTPUT_FOLDER, f"leads_{safe_filename}.csv")
                 
@@ -276,8 +268,9 @@ if __name__ == '__main__':
             else:
                 print(f"  ! Could not scrape any details for keyword '{keyword}'.")
 
-            print("  -> Taking a short break before the next keyword...")
-            time.sleep(15)
+            # 🌟 FIX: Random delay between keywords to avoid rate limiting
+            print("  -> Taking a random break (15-25s) before the next keyword...")
+            time.sleep(random.uniform(15, 25)) 
 
         driver.quit()
         print("\n\n--- BATCH PROCESS COMPLETE! ---")
