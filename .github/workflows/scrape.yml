@@ -1,7 +1,7 @@
 name: Web Triggered Scraper
 
 on:
-  # Is event se aap web interface ke zariye is Action ko chala sakte hain
+  # यह इवेंट आपको Vercel frontend से इस Action को चलाने की अनुमति देता है
   workflow_dispatch:
     inputs:
       keywords:
@@ -16,15 +16,15 @@ jobs:
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
-      # Yeh zaruri hai taake commit back ho sake
+      # यह commit back करने के लिए आवश्यक है
       with:
         token: ${{ secrets.GITHUB_TOKEN }} 
         
-    - name: Install Chromium Browser (For Selenium)
-      # Chromium-browser zaruri hai kyunke yeh GitHub ka default browser hai
+    - name: Install Chromium Browser and Driver (For Selenium)
+      # FIX: Selenium द्वारा उपयोग किए जाने वाले 'chromium-chromedriver' को PATH में उपलब्ध बनाने के लिए इंस्टॉल किया गया
       run: |
         sudo apt-get update
-        sudo apt-get install -y chromium-browser
+        sudo apt-get install -y chromium-browser chromium-chromedriver
         
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -32,29 +32,29 @@ jobs:
         python-version: '3.10'
         
     - name: Install Python Dependencies
-      # Requirements.txt file aapki repo mein honi chahiye
+      # यह आपकी requirements.txt फ़ाइल का उपयोग करता है
       run: |
         pip install -r requirements.txt
         
     - name: Set Environment Variables for Scraper
-      # Keywords input ko environment variable mein set karein
+      # Keywords input को environment variable में सेट करें
       run: |
         echo "KEYWORDS_INPUT=${{ github.event.inputs.keywords }}" >> $GITHUB_ENV
         
     - name: Run Scraper Script
-      # Scraper chalao
+      # Scraper चलाएँ
       run: python batch_scraper.py
       
     - name: Commit and Push Results
       uses: stefanzweifel/git-auto-commit-action@v5
       with:
-        # Woh folder jismein CSV files banegi
+        # वह फ़ोल्डर जिसमें CSV फ़ाइलें बनेंगी
         files: 'BATCH_SCRAPING_RESULTS/*.csv' 
         commit_message: "Automatic: Scraped leads for new job (Workflow ID: ${{ github.run_id }})"
-        # Force add files taake nayi files bhi add hon
+        # Force add files ताकि नई फ़ाइलें भी commit हों
         args: '--no-verify --force' 
         
     - name: Notify on Completion
       run: |
-        echo "## Scraping Job Complete!" >> $GITHUB_STEP_SUMMARY
-        echo "New leads are available in the 'BATCH_SCRAPING_RESULTS' folder on the 'main' branch." >> $GITHUB_STEP_SUMMARY
+        echo "## स्क्रैपिंग कार्य पूरा हुआ!" >> $GITHUB_STEP_SUMMARY
+        echo "नए leads 'BATCH_SCRAPING_RESULTS' फ़ोल्डर में 'main' branch पर उपलब्ध हैं।" >> $GITHUB_STEP_SUMMARY
