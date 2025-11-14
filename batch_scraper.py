@@ -1,12 +1,12 @@
-# batch_scraper.py (GitHub Actions ke liye Fixed)
-# यह स्क्रिप्ट GitHub Action से कीवर्ड्स को Environment Variable के माध्यम से उठाती है।
+# batch_scraper.py (GitHub Actions Final Fixed Version)
+# This script retrieves keywords from a GitHub Action Environment Variable.
 
 import time
 import pandas as pd
 import os
 import re
 import requests
-import sys # FIX: Clean exit के लिए sys को import करें
+import sys 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -18,11 +18,11 @@ from bs4 import BeautifulSoup
 import phonenumbers
 
 # --- CONFIGURATION ---
-# GitHub Action यहाँ पर keywords की list सेट करेगा (comma-separated string)
+# GitHub Action will set the list of keywords here (comma-separated string)
 KEYWORDS_STRING = os.environ.get('KEYWORDS_INPUT', 'restaurant near me, ac repair karachi')
 OUTPUT_FOLDER = 'BATCH_SCRAPING_RESULTS' 
 
-# सोशल मीडिया पैटर्न (पहचान के लिए)
+# Social media patterns for detection
 SOCIAL_MEDIA_PATTERNS = {
     'facebook': [r'facebook\.com/[^/\\s\\?]+', r'fb\.com/[^/\\s\\?]+'],
     'instagram': [r'instagram\.com/[^/\\s\\?]+', r'instagr\.am/[^/\\s\\?]+'],
@@ -36,32 +36,37 @@ SOCIAL_MEDIA_PATTERNS = {
 # --- FUNCTIONS ---
 
 def setup_driver():
-    """Chrome Driver को GitHub Actions environment के लिए कॉन्फ़िगर करता है।"""
-    print("-> Chrome Driver को Headless Mode के लिए सेट अप किया जा रहा है...")
+    """Configures the Chrome Driver for the GitHub Actions environment."""
+    print("-> Setting up Chrome Driver for Headless Mode...")
     options = webdriver.ChromeOptions()
-    options.add_argument('--headless')          # ब्राउज़र को पृष्ठभूमि (background) में चलाएँ
-    options.add_argument('--no-sandbox')        # GitHub Actions/Docker के लिए ज़रूरी है
-    options.add_argument('--disable-dev-shm-usage') # मेमोरी समस्या को ठीक करता है
+    options.add_argument('--headless')          # Run browser in background
+    options.add_argument('--no-sandbox')        # Required for GitHub Actions/Docker
+    options.add_argument('--disable-dev-shm-usage') # Fixes memory issue
     options.add_argument('--window-size=1920,1080')
     options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     
+    # 🌟 CRITICAL FIX: Tell Selenium where the Chromium browser binary is located.
+    # This path matches the 'chromium-browser' package installed in the YAML.
+    options.binary_location = '/usr/bin/chromium-browser' 
+    
     try:
-        # FIX: अब ड्राइवर system PATH में 'chromedriver' को ढूंढेगा, जिसे YAML फ़ाइल install करेगी
+        # The YAML file ensures 'chromedriver' is in the system PATH.
         driver = webdriver.Chrome(options=options)
-        print("-> ड्राइवर सेटअप सफल रहा।")
+        print("-> Driver setup successful.")
         return driver
     except Exception as e:
-        print(f"!!! ड्राइवर सेटअप में त्रुटि: {e}")
+        print(f"!!! Driver setup error: {e}")
+        # Clean exit on failure
         return None
 
 def scrape_social_media(website_url):
-    """वेबसाइट से सोशल मीडिया लिंक्स स्क्रैप करता है।"""
+    """Scrapes social media links from the website."""
     social_links = {key: 'N/A' for key in SOCIAL_MEDIA_PATTERNS}
     if website_url in ['N/A', 'No Website']:
         return social_links
 
     try:
-        # वेबसाइट का कंटेंट डाउनलोड करें
+        # Download website content
         headers = {
             'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
             'Accept-Language': 'en-US,en;q=0.9'
@@ -74,29 +79,32 @@ def scrape_social_media(website_url):
         soup = BeautifulSoup(response.content, 'html.parser')
         html_content = response.text 
         
-        # 1. HTML कंटेंट में लिंक्स तलाश करें
-        for key, patterns in SOCIAL_MEDIA_PATTERNS.items():
+        # 1. Look for links in HTML content
+        for key, patterns in SOCIAL_MEDIA_PATTERMS.items():
             for pattern in patterns:
                 match = re.search(pattern, html_content, re.IGNORECASE)
                 if match:
-                    if not match.group(0).startswith(('http', 'www')):
-                        social_links[key] = 'https://' + match.group(0)
+                    # Clean up the link (add https if missing)
+                    link = match.group(0)
+                    if not link.startswith(('http', 'www')):
+                        social_links[key] = 'https://' + link
                     else:
-                        social_links[key] = match.group(0)
+                        social_links[key] = link
                     break 
 
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException:
         pass
-    except Exception as e:
+    except Exception:
         pass
 
     return social_links
 
 def scrape_google_maps(driver, keyword):
-    """Google Maps से व्यापार (business) leads स्क्रैप करता है।"""
+    """Scrapes business leads from Google Maps."""
+    # Note: Using a modified base URL to help prevent immediate blocks
     base_url = "https://www.google.com/maps/search/"
     search_url = f"{base_url}{keyword.replace(' ', '+')}"
-    print(f"-> खोज जारी है: {keyword}")
+    print(f"-> Search initiated: {keyword}")
 
     try:
         driver.get(search_url)
@@ -104,46 +112,46 @@ def scrape_google_maps(driver, keyword):
             EC.presence_of_element_located((By.CSS_SELECTOR, 'div[role="feed"]'))
         )
     except TimeoutException:
-        print("  ! खोज पेज लोड होने में समय लगा। यह कीवर्ड छोड़ा जा रहा है।")
+        print("  ! Search page took too long to load. Skipping keyword.")
         return []
     except WebDriverException as e:
-        print(f"  ! WebDriver त्रुटि: {e}")
+        print(f"  ! WebDriver Error: {e}")
         return []
 
     business_details = []
     
-    # अधिक परिणाम लोड करने के लिए नीचे स्क्रॉल करें (दक्षता के लिए अधिकतम 3 स्क्रॉल)
+    # Scroll down to load more results (max 3 scrolls for efficiency)
     for _ in range(3):
         scrollable_div = driver.find_element(By.CSS_SELECTOR, 'div[role="feed"]')
         driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scrollable_div)
         time.sleep(3) 
 
-    # सभी व्यापार कार्ड निकालें
+    # Extract all business cards
     try:
         cards = driver.find_elements(By.CSS_SELECTOR, 'div[role="feed"] > div > div[jsaction^="mouseover:"][aria-label]')
-        print(f"  -> {len(cards)} संभावित कार्ड मिले।")
+        print(f"  -> Found {len(cards)} potential cards.")
     except:
-        print("  ! परिणाम कार्ड नहीं मिल सके।")
+        print("  ! Could not find result cards.")
         return []
 
-    # प्रत्येक कार्ड को प्रोसेस करें
+    # Process each card
     for card in cards:
         try:
             name_element = card.find_element(By.CLASS_NAME, 'fontHeadlineSmall')
             name = name_element.text.strip()
             
-            # विवरण पैनल खोलने के लिए कार्ड पर क्लिक करें
+            # Click the card to open the details panel
             card.click()
             
-            # विवरण पैनल के लोड होने का इंतजार करें
+            # Wait for the details panel to load
             WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'div[data-ogc-title]'))
             )
             
-            # नए पैनल से विवरण निकालें
+            # Extract details from the new panel
             details = {'Business Name': name}
             
-            # श्रेणी (Category), रेटिंग, समीक्षाएँ (Reviews) निकालें
+            # Extract Category, Rating, Reviews
             try:
                 details['Category'] = driver.find_element(By.CSS_SELECTOR, 'button[jsaction*="category"]').text.strip()
             except:
@@ -157,11 +165,12 @@ def scrape_google_maps(driver, keyword):
                 
             try:
                 reviews_text = driver.find_element(By.CSS_SELECTOR, 'button[jsaction*="toggleReviews"]').text.strip()
+                # Clean up the reviews count (e.g., "1,234 reviews" -> "1,234")
                 details['Reviews'] = reviews_text.replace(' reviews', '').replace(' Review', '').replace('(', '').replace(')', '').strip()
             except:
                 details['Reviews'] = 'N/A'
             
-            # पता (Address), फ़ोन, वेबसाइट निकालें
+            # Extract Address, Phone, Website
             info_elements = driver.find_elements(By.CSS_SELECTOR, 'button[data-tooltip]')
             
             details['Address'] = 'N/A'
@@ -179,26 +188,27 @@ def scrape_google_maps(driver, keyword):
                 elif tooltip == 'Website':
                     details['Website'] = text
             
-            # --- सोशल मीडिया स्क्रैपिंग ---
+            # --- Social Media Scraping ---
             social_links = scrape_social_media(details['Website'])
             details.update(social_links)
             
             business_details.append(details)
-            print(f"  -> स्क्रैप किया गया: {name}")
+            print(f"  -> Scraped: {name}")
 
-            # सूची पर वापस जाने के लिए विवरण पैनल बंद करें
+            # Close the details panel to return to the list
             try:
                 close_button = driver.find_element(By.CSS_SELECTOR, 'button[aria-label="Close"]')
                 close_button.click()
                 time.sleep(1) 
             except:
-                # यदि बंद करने का बटन नहीं मिलता है, तो रीसेट करने के लिए पेज को रीफ़्रेश करें
+                # If close button is not found, refresh the page to reset the state
                 driver.get(search_url)
                 WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'div[role="feed"]'))
                 )
                 
-        except Exception as e:
+        except Exception:
+            # Skip to the next card if processing fails for any reason
             pass
 
     return business_details
@@ -209,17 +219,19 @@ if __name__ == '__main__':
     keywords = [k.strip() for k in KEYWORDS_STRING.split(',') if k.strip()]
     
     if not keywords:
-        print("!!! त्रुटि: KEYWORDS_INPUT environment variable में कोई कीवर्ड नहीं मिला।")
+        print("!!! ERROR: No keywords found in KEYWORDS_INPUT environment variable.")
+        sys.exit(1)
     else:
-        print(f"\n--- बैच स्क्रैपिंग शुरू हो रही है ---")
-        print(f"प्रोसेस करने के लिए कीवर्ड्स: {len(keywords)}")
+        print(f"\n--- BATCH SCRAPING STARTING ---")
+        print(f"Keywords to process: {len(keywords)}")
         
         if not os.path.exists(OUTPUT_FOLDER):
             os.makedirs(OUTPUT_FOLDER)
         
         driver = setup_driver()
         if not driver:
-            # FIX: exit(1) की जगह sys.exit(1) का प्रयोग करें
+            # sys.exit(1) is called inside setup_driver() if it fails, 
+            # but we keep this check for redundancy.
             sys.exit(1)
 
         for keyword in keywords:
@@ -228,26 +240,29 @@ if __name__ == '__main__':
             if all_business_details:
                 df = pd.DataFrame(all_business_details)
                 
+                # Define desired column order
                 column_order = [
                     'Business Name', 'Website', 'Phone Number', 'Rating', 'Reviews', 
                     'Category', 'Address', 'Facebook', 'Instagram', 'Twitter', 
                     'LinkedIn', 'YouTube', 'Pinterest', 'TikTok'
                 ]
                 
+                # Filter columns to only include existing ones and reorder
                 existing_columns = [col for col in column_order if col in df.columns]
                 df = df.reindex(columns=existing_columns)
                 
+                # Create a safe filename from the keyword
                 safe_filename = "".join(c for c in keyword if c.isalnum() or c in (' ', '_')).rstrip()
                 output_path = os.path.join(OUTPUT_FOLDER, f"leads_{safe_filename}.csv")
                 
                 df.to_csv(output_path, index=False, encoding='utf-8-sig')
-                print(f"  -> सफलता: '{output_path}' में {len(all_business_details)} leads सहेजी गईं")
+                print(f"  -> SUCCESS: Saved {len(all_business_details)} leads to '{output_path}'")
             else:
-                print(f"  ! कीवर्ड '{keyword}' के लिए कोई विवरण स्क्रैप नहीं हो सका।")
+                print(f"  ! Could not scrape any details for keyword '{keyword}'.")
 
-            print("  -> अगले कीवर्ड से पहले थोड़ा ब्रेक ले रहे हैं...")
+            print("  -> Taking a short break before the next keyword...")
             time.sleep(15)
 
         driver.quit()
-        print("\n\n--- बैच प्रोसेस पूरा हुआ! ---")
-        print(f"सभी कीवर्ड्स प्रोसेस हो चुके हैं। परिणाम GitHub पर commit कर दिए गए हैं।")
+        print("\n\n--- BATCH PROCESS COMPLETE! ---")
+        print(f"All keywords have been processed. The results have been committed back to the repository.")
